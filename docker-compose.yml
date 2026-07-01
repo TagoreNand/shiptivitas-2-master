@@ -1,0 +1,59 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: shiptivity
+      POSTGRES_PASSWORD: shiptivity
+      POSTGRES_DB: shiptivity
+    ports:
+      - '5432:5432'
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U shiptivity']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - '6379:6379'
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      DATABASE_URL: postgres://shiptivity:shiptivity@postgres:5432/shiptivity
+      REDIS_URL: redis://redis:6379
+      CORS_ORIGINS: '*'
+      TRACING_ENABLED: 'true'
+      OTEL_SERVICE_NAME: shiptivity-api
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
+    ports:
+      - '3001:3001'
+    # Apply migrations, then start. (In k8s this is an initContainer/Job.)
+    command: sh -c "npm run migrate && node dist/index.js"
+
+  # All-in-one Jaeger: OTLP ingest on 4318, UI on 16686.
+  jaeger:
+    image: jaegertracing/all-in-one:1.62
+    environment:
+      COLLECTOR_OTLP_ENABLED: 'true'
+    ports:
+      - '16686:16686'
+      - '4318:4318'
+
+volumes:
+  pgdata:

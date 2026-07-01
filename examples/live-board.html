@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Live Kanban board</title>
+    <style>
+      body { font-family: system-ui, sans-serif; margin: 2rem; color: #1a1a1a; }
+      h1 { font-size: 1.25rem; }
+      #status { font-size: 0.8rem; font-weight: normal; color: #888; }
+      #board { display: flex; gap: 1rem; align-items: flex-start; }
+      .lane { flex: 1; background: #f4f5f7; border-radius: 8px; padding: 0.5rem 0.75rem; }
+      .lane h2 { font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.04em; color: #5e6c84; }
+      ul { list-style: none; margin: 0; padding: 0; }
+      li { background: #fff; border-radius: 6px; box-shadow: 0 1px 0 rgba(9,30,66,.25);
+           padding: 0.5rem 0.6rem; margin-bottom: 0.5rem; font-size: 0.9rem; }
+      li.flash { animation: flash 1s ease; }
+      @keyframes flash { from { background: #fff3cd; } to { background: #fff; } }
+    </style>
+  </head>
+  <body>
+    <h1>Live Kanban board <span id="status">connecting…</span></h1>
+    <div id="board">
+      <div class="lane" data-status="backlog"><h2>Backlog</h2><ul></ul></div>
+      <div class="lane" data-status="in-progress"><h2>In progress</h2><ul></ul></div>
+      <div class="lane" data-status="complete"><h2>Complete</h2><ul></ul></div>
+    </div>
+
+    <script>
+      // If AUTH_REQUIRED=true, append `?access_token=<jwt>` to the stream URL and
+      // send the same Bearer token on the fetch below.
+      const API = location.origin + '/api/v1';
+      const statusEl = document.getElementById('status');
+      let lastMovedId = null;
+
+      async function loadBoard() {
+        const res = await fetch(API + '/clients');
+        return res.json();
+      }
+
+      function render(cards) {
+        for (const lane of document.querySelectorAll('.lane')) {
+          const ul = lane.querySelector('ul');
+          ul.innerHTML = '';
+          cards
+            .filter((c) => c.status === lane.dataset.status)
+            .sort((a, b) => (a.rank < b.rank ? -1 : 1))
+            .forEach((c) => {
+              const li = document.createElement('li');
+              li.textContent = c.name;
+              if (c.id === lastMovedId) li.className = 'flash';
+              ul.appendChild(li);
+            });
+        }
+      }
+
+      async function main() {
+        render(await loadBoard());
+        const es = new EventSource(API + '/stream');
+        es.onopen = () => (statusEl.textContent = '● live');
+        es.onerror = () => (statusEl.textContent = '○ reconnecting…');
+        const onEvent = async (e) => {
+          try { lastMovedId = JSON.parse(e.data).aggregateId; } catch {}
+          render(await loadBoard());
+        };
+        for (const type of ['card.moved', 'card.completed', 'card.created']) {
+          es.addEventListener(type, onEvent);
+        }
+      }
+      main();
+    </script>
+  </body>
+</html>

@@ -1,0 +1,12 @@
+node_modules
+dist
+build
+.git
+.github
+legacy
+test
+*.log
+.env
+coverage
+README*.md
+ARCHITECTURE.md
